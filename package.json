@@ -1,0 +1,18 @@
+{
+    "name": "image-generator-service",
+    "version": "1.0.0",
+    "description": "An app service that proxies image generation requests to the Together API with content moderation and rate limiting.",
+    "main": "index.js",
+    "type": "module",
+    "scripts": {
+      "start": "node index.js"
+    },
+    "dependencies": {
+      "express": "^4.18.2",
+      "express-rate-limit": "^6.7.0",
+      "together-ai": "^0.13.0"
+    },
+    "engines": {
+      "node": ">=18"
+    }
+  }
