@@ -11,12 +11,17 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// Trust the proxy for proper X-Forwarded-For handling
+app.set("trust proxy", 1);
+
 // Enable CORS for all requests
 app.use(cors());
 
 // Middleware to log all incoming requests with timestamp, method, URL, and IP address.
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl} from ${req.ip}`);
+  console.log(
+    `[${new Date().toISOString()}] ${req.method} ${req.originalUrl} from ${req.ip}`
+  );
   next();
 });
 
@@ -28,17 +33,21 @@ app.use(express.json());
 // Rate limiter: Allow only one image generation request per second per client IP.
 const limiter = rateLimit({
   windowMs: 1000, // 1 second window
-  max: 1,         // start blocking after 1 request
+  max: 1, // start blocking after 1 request
   message: "Rate limit exceeded. Only one image per second allowed."
 });
 
 // Main endpoint: /generate-image
 app.post("/generate-image", limiter, async (req, res) => {
   const prompt = req.body.prompt;
-  console.log(`[${new Date().toISOString()}] Received /generate-image request from ${req.ip} with prompt: ${prompt}`);
+  console.log(
+    `[${new Date().toISOString()}] Received /generate-image request from ${req.ip} with prompt: ${prompt}`
+  );
 
   if (!prompt || typeof prompt !== "string") {
-    console.warn(`[${new Date().toISOString()}] Invalid prompt received from ${req.ip}`);
+    console.warn(
+      `[${new Date().toISOString()}] Invalid prompt received from ${req.ip}`
+    );
     return res
       .status(400)
       .json({ error: "Missing or invalid 'prompt' in request body." });
@@ -46,10 +55,14 @@ app.post("/generate-image", limiter, async (req, res) => {
 
   // Step 1: Content Moderation using Together chat completions API
   try {
-    console.log(`[${new Date().toISOString()}] Initiating content moderation for prompt: ${prompt}`);
+    console.log(
+      `[${new Date().toISOString()}] Initiating content moderation for prompt: ${prompt}`
+    );
     const moderator = new Together();
 
-    console.debug(`[${new Date().toISOString()}] Sending chat moderation request to Together API`);
+    console.debug(
+      `[${new Date().toISOString()}] Sending chat moderation request to Together API`
+    );
     const modResponse = await moderator.chat.completions.create({
       messages: [
         {
@@ -81,14 +94,21 @@ app.post("/generate-image", limiter, async (req, res) => {
     } else {
       throw new Error("Unexpected format from moderation response.");
     }
-    console.log(`[${new Date().toISOString()}] Content moderation result: ${moderationAnswer}`);
+    console.log(
+      `[${new Date().toISOString()}] Content moderation result: ${moderationAnswer}`
+    );
 
     if (moderationAnswer === "no") {
-      console.warn(`[${new Date().toISOString()}] Content moderated as inappropriate. Returning local nonono.gif to ${req.ip}`);
+      console.warn(
+        `[${new Date().toISOString()}] Content moderated as inappropriate. Returning local nonono.gif to ${req.ip}`
+      );
       return res.json({ url: "/nonono.gif" });
     }
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Error during content moderation for prompt: ${prompt}`, error);
+    console.error(
+      `[${new Date().toISOString()}] Error during content moderation for prompt: ${prompt}`,
+      error
+    );
     return res
       .status(500)
       .json({ error: "Content moderation failed. Please try again later." });
@@ -96,7 +116,9 @@ app.post("/generate-image", limiter, async (req, res) => {
 
   // Step 2: Image Generation using Together Image API
   try {
-    console.log(`[${new Date().toISOString()}] Passed moderation. Generating image for prompt: ${prompt}`);
+    console.log(
+      `[${new Date().toISOString()}] Passed moderation. Generating image for prompt: ${prompt}`
+    );
     const togetherResponse = await fetch("https://api.together.xyz/v1/images", {
       method: "POST",
       headers: {
@@ -114,19 +136,52 @@ app.post("/generate-image", limiter, async (req, res) => {
       })
     });
 
-    const data = await togetherResponse.json();
-    console.debug(`[${new Date().toISOString()}] Together Image API responded with status: ${togetherResponse.status}, data:`, data);
-    
+    // Read the raw response as text
+    const rawResponse = await togetherResponse.text();
+
+    // Log the raw response if debug is enabled
+    if (process.env.DEBUG && process.env.DEBUG.toLowerCase() === "true") {
+      console.debug(
+        `[${new Date().toISOString()}] Raw Together API Response:`,
+        rawResponse
+      );
+    }
+
+    let data;
+    try {
+      data = JSON.parse(rawResponse);
+    } catch (err) {
+      console.error(
+        `[${new Date().toISOString()}] Failed to parse JSON from Together API. Raw response:`,
+        rawResponse
+      );
+      return res
+        .status(500)
+        .json({ error: "Image API returned an unexpected response." });
+    }
+
+    console.debug(
+      `[${new Date().toISOString()}] Together Image API responded with status: ${togetherResponse.status}, data:`,
+      data
+    );
+
     if (!togetherResponse.ok) {
       const errorMessage = data.error || "Error generating image.";
-      console.error(`[${new Date().toISOString()}] Image generation failed with status ${togetherResponse.status}: ${errorMessage}`);
+      console.error(
+        `[${new Date().toISOString()}] Image generation failed with status ${togetherResponse.status}: ${errorMessage}`
+      );
       return res.status(togetherResponse.status).json({ error: errorMessage });
     }
 
-    console.log(`[${new Date().toISOString()}] Image generated successfully for prompt: ${prompt}, URL: ${data.data[0].url}`);
+    console.log(
+      `[${new Date().toISOString()}] Image generated successfully for prompt: ${prompt}, URL: ${data.data[0].url}`
+    );
     return res.json({ url: data.data[0].url });
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Error generating image for prompt: ${prompt}`, error);
+    console.error(
+      `[${new Date().toISOString()}] Error generating image for prompt: ${prompt}`,
+      error
+    );
     return res.status(500).json({ error: "Internal Server Error" });
   }
 });
