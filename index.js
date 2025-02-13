@@ -53,22 +53,22 @@ app.post("/generate-image", limiter, async (req, res) => {
       .json({ error: "Missing or invalid 'prompt' in request body." });
   }
 
-  // Step 1: Content Moderation using Together chat completions API
+  // Step 1: Content Moderation using Together AI Chat Completions API
   try {
     console.log(
       `[${new Date().toISOString()}] Initiating content moderation for prompt: ${prompt}`
     );
-    const moderator = new Together();
+    const moderator = new Together({ apiKey: process.env.TOGETHER_API_KEY });
 
     console.debug(
-      `[${new Date().toISOString()}] Sending chat moderation request to Together API`
+      `[${new Date().toISOString()}] Sending moderation request to Together API`
     );
     const modResponse = await moderator.chat.completions.create({
       messages: [
         {
           role: "system",
           content:
-            "You are a content moderator for a text-to-image pipeline. Your job is to decide if the content is appropriate.\n\n**You answer with `yes` or `no` only.**"
+            "You are a content moderator for a text-to-image pipeline. Your job is to decide if the content is appropriate.\n\n**Answer with `yes` or `no` only.**"
         },
         {
           role: "user",
@@ -114,69 +114,36 @@ app.post("/generate-image", limiter, async (req, res) => {
       .json({ error: "Content moderation failed. Please try again later." });
   }
 
-  // Step 2: Image Generation using Together Image API
+  // Step 2: Image Generation using Together AI Images API via together-ai library
   try {
     console.log(
       `[${new Date().toISOString()}] Passed moderation. Generating image for prompt: ${prompt}`
     );
-    const togetherResponse = await fetch("https://api.together.xyz/v1/images", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.TOGETHER_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: "black-forest-labs/FLUX.1-schnell-Free",
-        prompt: prompt,
-        width: 1024,
-        height: 768,
-        steps: 1,
-        n: 1,
-        response_format: "url"
-      })
+
+    if (!process.env.TOGETHER_API_KEY) {
+      console.error(`[${new Date().toISOString()}] Missing Together API key.`);
+      return res.status(500).json({ error: "Internal Server Error" });
+    }
+
+    // Create an instance of Together with your API key.
+    const together = new Together({ apiKey: process.env.TOGETHER_API_KEY });
+
+    // Use the together.images.create method to generate the image.
+    const imageResponse = await together.images.create({
+      model: "black-forest-labs/FLUX.1-schnell-Free",
+      prompt: prompt,
+      width: 1440,
+      height: 768,
+      steps: 4,
+      n: 1,
+      response_format: "b64_json"
     });
 
-    // Read the raw response as text
-    const rawResponse = await togetherResponse.text();
-
-    // Log the raw response if debug is enabled
-    if (process.env.DEBUG && process.env.DEBUG.toLowerCase() === "true") {
-      console.debug(
-        `[${new Date().toISOString()}] Raw Together API Response:`,
-        rawResponse
-      );
-    }
-
-    let data;
-    try {
-      data = JSON.parse(rawResponse);
-    } catch (err) {
-      console.error(
-        `[${new Date().toISOString()}] Failed to parse JSON from Together API. Raw response:`,
-        rawResponse
-      );
-      return res
-        .status(500)
-        .json({ error: "Image API returned an unexpected response." });
-    }
-
-    console.debug(
-      `[${new Date().toISOString()}] Together Image API responded with status: ${togetherResponse.status}, data:`,
-      data
-    );
-
-    if (!togetherResponse.ok) {
-      const errorMessage = data.error || "Error generating image.";
-      console.error(
-        `[${new Date().toISOString()}] Image generation failed with status ${togetherResponse.status}: ${errorMessage}`
-      );
-      return res.status(togetherResponse.status).json({ error: errorMessage });
-    }
-
     console.log(
-      `[${new Date().toISOString()}] Image generated successfully for prompt: ${prompt}, URL: ${data.data[0].url}`
+      `[${new Date().toISOString()}] Image generated successfully for prompt: ${prompt}`
     );
-    return res.json({ url: data.data[0].url });
+    // Return the base64 image string as part of the JSON response.
+    return res.json({ b64_json: imageResponse.data[0].b64_json });
   } catch (error) {
     console.error(
       `[${new Date().toISOString()}] Error generating image for prompt: ${prompt}`,
