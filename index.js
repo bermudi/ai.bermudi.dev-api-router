@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 import path from "path";
+import fs from "fs/promises";
 import { fileURLToPath } from "url";
 import Together from "together-ai";
 
@@ -25,7 +26,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Serve static files (for the nonono.gif)
+// Serve static files (for other potential assets)
 app.use(express.static(path.join(__dirname, "public")));
 
 app.use(express.json());
@@ -100,9 +101,21 @@ app.post("/generate-image", limiter, async (req, res) => {
 
     if (moderationAnswer === "no") {
       console.warn(
-        `[${new Date().toISOString()}] Content moderated as inappropriate. Returning local nonono.gif to ${req.ip}`
+        `[${new Date().toISOString()}] Content moderated as inappropriate. Returning nonono.gif to ${req.ip}`
       );
-      return res.json({ url: "/nonono.gif" });
+      try {
+        // Read nonono.gif from filesystem and convert to base64
+        const gifPath = path.join(__dirname, "public", "nonono.gif");
+        const gifBuffer = await fs.readFile(gifPath);
+        const base64Gif = gifBuffer.toString("base64");
+        return res.json({ b64_json: base64Gif });
+      } catch (error) {
+        console.error(
+          `[${new Date().toISOString()}] Failed to read nonono.gif:`,
+          error
+        );
+        return res.status(500).json({ error: "Internal Server Error" });
+      }
     }
   } catch (error) {
     console.error(
